@@ -9,7 +9,7 @@
 
 
 # MAJIQ workflow v3: in v2 grouped all the biological and technical replicates by neuron. In v3, group the technical replicates (if any) by biological replicate.
-# MAJIQ v4: use the merged bams
+# MAJIQ v4: use the merged bams (no technical replicate), group the biological replicates by neuron
 
 
 # ----------------------------------------------------------------------------
@@ -76,7 +76,7 @@ declare -A sampByNeur_path # for the PSI command
 
 for smp in "${samplelist[@]}"
 do
-	if [[ $smp =~ ^([A-Z1-9ef]{2,4}r[0-9]{1,4})[t12]*$ ]]
+	if [[ $smp =~ ^([A-Z1-9ef]{2,4})r[0-9]{1,4}[t12]*$ ]]
 	then
 		if [[ -z ${sampByNeur[${BASH_REMATCH[1]}]} ]]
 		then
