@@ -2,4 +2,4 @@ archive
 logs
 slurm*
 intermediates
-
+.Rproj.user
