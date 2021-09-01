@@ -76,7 +76,7 @@ declare -A sampByNeur_path # for the PSI command
 
 for smp in "${samplelist[@]}"
 do
-	if [[ $smp =~ ^([A-Z1-4ef]{2,4}r[0-9]{1,4})[t12]*$ ]]
+	if [[ $smp =~ ^([A-Z1-9ef]{2,4}r[0-9]{1,4})[t12]*$ ]]
 	then
 		if [[ -z ${sampByNeur[${BASH_REMATCH[1]}]} ]]
 		then
