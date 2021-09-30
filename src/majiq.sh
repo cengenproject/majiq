@@ -123,6 +123,28 @@ echo
 source /home/aw853/bin/majiq/env/bin/activate
 
 
+
+
+# --min-experiments  fraction or number of experiments that must pass filters [Default: 0.5]
+#
+###     SJ filters
+# --minreads    minimum nb of reads for SJ [Default: 3]
+# --minpos      min nb of read positions [Default: 2]
+# --min-denovo  min nb reads on de-novo SJ [Default: 5]
+#
+###     Intron retention filters
+# --irnbins           fraction of intronic read positions that must pass min-intronic-cov [Default: 0.5]
+# --min-intronic-cov  min per-position normalized intronic readrate [Default: 0.01]
+# 
+# Simplifier options:
+# 
+#     --simplify simplification ignores junctions and introns with low usage [Default: -1] 
+
+# Bootstrap coverage sampling:
+# 
+#     --markstacks p-value threshold used for dremoving read stacks [Default: 1e-07]
+#     --m number of bootstraps to save in output SJ and MAJIQ files [Default: 30]
+
 majiq build --nproc $SLURM_CPUS_PER_TASK \
 			-o $outdir/build \
 			--conf $cfg_file \
@@ -141,6 +163,11 @@ echo "Running MAJIQ PSI on $(date) with conf $cfg_file"
 echo
 
 
+# --minreads min nb of reads at any positions in a LSV [Default: 10]
+# --minpos min nb of start positions with at least 1 read in a LSV to considered. [Default: 3]
+# --min-experiments Use to alter the threshold for group filters.
+# --output-type {voila,tsv,all} Specify the type(s) of output files to produce
+#   
 for neur in ${!sampByNeur_path[@]}
 do
 	echo "---- PSI for $neur ----"
