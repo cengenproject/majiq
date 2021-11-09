@@ -23,7 +23,7 @@ bam_dir='/home/aw853/scratch60/2021-11-08_alignments'
 WSversion='WS281'
 references_dir='/gpfs/ycga/project/ysm/hammarlund/aw853/references'
 
-outdir='/gpfs/ycga/project/ysm/hammarlund/aw853/counts/majiq/2021-11-08_outs'
+outdir='/gpfs/ycga/project/ysm/hammarlund/aw853/counts/majiq/2021-11-09_outs'
 
 gff_conversion="gtf2gff3" # or gffread
 
