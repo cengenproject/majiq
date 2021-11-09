@@ -10,7 +10,7 @@
 
 # MAJIQ workflow v3: in v2 grouped all the biological and technical replicates by neuron. In v3, group the technical replicates (if any) by biological replicate.
 # MAJIQ v4: use the merged bams (no technical replicate), group the biological replicates by neuron
-
+# v5: also perform tests for every neuron pair
 
 # ----------------------------------------------------------------------------
 # -----------------------    Parameters definitions   ------------------------
@@ -18,12 +18,12 @@
 
 # Locations and parameters
 #bam_dir='/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/bsn3'
-bam_dir='/home/aw853/scratch60/2021-08-18_alignments'
+bam_dir='/home/aw853/scratch60/2021-11-08_alignments'
 
-WSversion='WS277'
+WSversion='WS281'
 references_dir='/gpfs/ycga/project/ysm/hammarlund/aw853/references'
 
-outdir='/gpfs/ycga/project/ysm/hammarlund/aw853/counts/majiq/2021-09-01_outs'
+outdir='/gpfs/ycga/project/ysm/hammarlund/aw853/counts/majiq/2021-11-08_outs'
 
 gff_conversion="gtf2gff3" # or gffread
 
@@ -46,6 +46,7 @@ cfg_file=$outdir/$(date +%F)_majiq.cfg
 mkdir -p $outdir/build
 mkdir -p $outdir/psi
 mkdir -p $outdir/logs
+mkdir -p $outdir/deltapsi
 
 
 
@@ -57,7 +58,7 @@ set -e
 
 echo
 echo
-echo "Starting majiq (config, build, quantif v4), $(date)"
+echo "Starting majiq (config, build, quantif, test v5), $(date)"
 echo
 echo
 
@@ -69,7 +70,9 @@ then
   exit 1
 fi
 
-# List the samples to process ----
+
+echo "--------   List samples to process   --------"
+
 samplelist=($(ls $bam_dir/*bam | xargs basename -a -s .bam))
 declare -A sampByNeur #for the config file to the BUILD command
 declare -A sampByNeur_path # for the PSI command
@@ -102,7 +105,7 @@ unset sampByNeur_path[Ref]
 
 
 
-echo "--------    Creating config file    --------"
+echo "--------     Create config file     --------"
 
 echo "[info]
 bamdirs=$bam_dir
@@ -113,6 +116,9 @@ strandness=forward
 printf "%s\n" ${sampByNeur[@]} >> $cfg_file
 
 echo "Config file generated and saved as $cfg_file"
+
+
+
 
 # build ----
 
@@ -156,6 +162,9 @@ echo "Finished the build step."
 echo
 
 
+
+
+
 # psi ----
 
 echo "--------    PSI quantifications    --------"
@@ -179,7 +188,64 @@ do
 		  ${sampByNeur_path[$neur]}
 done
 
-echo "--------    Finished quantifications.    --------"
+
+
+echo "--------      DeltaPSI tests      --------"
+echo "Running MAJIQ DeltaPSI on $(date) with conf $cfg_file"
+echo
+
+# get the neuron names in a non-associative array
+all_neurs=(${!sampByNeur[@]})
+
+for ((  i = 0; i < ${#all_neurs[@]}; i++ ))
+do
+  for (( j = $i+1; j < ${#all_neurs[@]}; j++))
+	do
+	  echo "##################################################################"
+		
+		neurA=${all_neurs[$i]}
+		neurB=${all_neurs[$j]}
+		
+		echo "i: $i , j: $j ; Testing $neurA vs $neurB"
+		echo
+		
+		
+    # Mandatory arguments:
+    # 
+    #   -grp1 FILES1 [FILES1 ...]: Set of .majiq file[s] for the first condition
+    #   -grp2 FILES2 [FILES2 ...]: Set of .majiq file[s] for the second condition
+    #   -n/--names NAMES [NAMES ...]: _cond_id1_ _cond_id2_: group identifiers for grp1 and grp2 respectively.
+    #   -o/--output OUTDIR: PSI output directory. It will contain the deltapsi.voila file once the execution is finished.
+    # 
+    # Optional arguments:
+    # 
+    #   --minreads MINREADS: Minimum number of reads [Default: 10]
+    #   --minpos MINPOS: Minimum number of start positions [Default: 3]
+    #   --min-experiments MIN_EXP: Use to alter the threshold for group filters.
+    #   --binsize BINSIZE: The bins for PSI values. With a BINSIZE of 0.025 (default), we have 40 bins
+    #   --default-prior: Use a default prior instead of computing it using the empirical data
+    #   --prior-minreads PRIORMINREADS: Minimum number of reads (for the 'best set' calculation). [Default: 20]
+    #   --prior-minnonzero PRIORMINNONZERO: Minimum number of positions for the best set.
+    #   --prior-iter ITER: Max number of iterations of the EM
+    #   --output-type {voila,tsv,all} Specify the type(s) of output files to produce [Default: all]
+
+		majiq deltapsi \
+		  -grp1 ${sampByNeur_path[$neurA]} \
+		  -grp2 ${sampByNeur_path[$neurB]} \
+		  -n $neurA $neurB \
+		  -o $outdir/deltapsi \
+		  --nprocs $SLURM_CPUS_PER_TASK \
+		  --output-type all \
+		  --logger $outdir/logs
+		
+		echo
+		
+	done
+done
+
+
+
+echo "------------ End tests ------------"
 echo
 
 
