@@ -18,12 +18,12 @@
 
 # Locations and parameters
 #bam_dir='/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/bsn3'
-bam_dir='/home/aw853/scratch60/2021-08-18_alignments'
+bam_dir='/home/aw853/scratch60/2021-11-08_alignments'
 
 WSversion='WS277'
 references_dir='/gpfs/ycga/project/ysm/hammarlund/aw853/references'
 
-outdir='/gpfs/ycga/project/ysm/hammarlund/aw853/counts/majiq/2021-09-01_outs'
+outdir='/gpfs/ycga/project/ysm/hammarlund/aw853/counts/majiq/2021-11-09_outs'
 
 gff_conversion="gtf2gff3" # or gffread
 
