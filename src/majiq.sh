@@ -23,7 +23,7 @@ bam_dir='/home/aw853/scratch60/2021-11-08_alignments'
 WSversion='WS281'
 references_dir='/gpfs/ycga/project/ysm/hammarlund/aw853/references'
 
-outdir='/gpfs/ycga/project/ysm/hammarlund/aw853/counts/majiq/2021-11-09_outs'
+outdir='/gpfs/ycga/project/ysm/hammarlund/aw853/counts/majiq/2021-11-10_outs'
 
 gff_conversion="gtf2gff3" # or gffread
 
@@ -126,7 +126,7 @@ echo
 echo "Running MAJIQ build on $(date) with $gff_conversion and autocreated conf file"
 echo
 
-source /home/aw853/bin/majiq/env/bin/activate
+source /home/aw853/bin/majiq_v2-3/env/bin/activate
 
 
 
@@ -253,9 +253,10 @@ echo
 mv $outdir/build/splicegraph.sql $outdir/splicegraph.sql
 mv $outdir/build/majiq.log $outdir/logs/majiq_build.log
 mv $outdir/psi/psi_majiq.log $outdir/logs/majiq_psi.log
+mv $outdir/deltapsi/deltapsi_majiq.log $outdir/logs/majiq_deltapsi.log
 
 # to download on local computer for Voila and R analyses, then can be deleted from cluster
-tar -czf $outdir/$(date +%y%m%d)_mjq_exprt.tar.gz $outdir/psi/ $outdir/splicegraph.sql
+tar -czf $outdir/$(date +%y%m%d)_mjq_exprt.tar.gz $outdir/psi/ $outdir/splicegraph.sql $outdir/deltapsi/*.tsv
 
-
+echo
 echo "All done $(date)"
