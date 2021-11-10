@@ -127,6 +127,7 @@ echo "Running MAJIQ build on $(date) with $gff_conversion and autocreated conf f
 echo
 
 source /home/aw853/bin/majiq_v2-3/env/bin/activate
+module load Python/3.8.6-GCCcore-10.2.0 HTSlib/1.12-GCCcore-10.2.0
 
 
 
