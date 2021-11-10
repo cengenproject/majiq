@@ -234,7 +234,7 @@ do
 		  -grp2 ${sampByNeur_path[$neurB]} \
 		  -n $neurA $neurB \
 		  -o $outdir/deltapsi \
-		  --nprocs $SLURM_CPUS_PER_TASK \
+		  --nproc $SLURM_CPUS_PER_TASK \
 		  --output-type all \
 		  --logger $outdir/logs
 		
