@@ -39,6 +39,22 @@ length(unique(xx$junction_gene_id))
 
 
 
+# Alt start ----
+dbListFields(con, "alt_start")
+
+
+res <- dbSendQuery(con, "SELECT * FROM alt_start;")
+xx <- dbFetch(res)
+dbClearResult(res)
+
+
+head(xx)
+nrow(xx)
+table(duplicated(xx$gene_id))
+
+length(unique(xx$junction_gene_id))
+
+
 
 
 
