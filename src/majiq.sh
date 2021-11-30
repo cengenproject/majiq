@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --partition=general
-#SBATCH --job-name=majiq2
+#SBATCH --job-name=majiq6
 #SBATCH -c 15
 #SBATCH --mem=15G
-#SBATCH --time=2-05:10:00
+#SBATCH --time=3-05:10:00
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=alexis.weinreb@yale.edu
 
@@ -11,6 +11,8 @@
 # MAJIQ workflow v3: in v2 grouped all the biological and technical replicates by neuron. In v3, group the technical replicates (if any) by biological replicate.
 # MAJIQ v4: use the merged bams (no technical replicate), group the biological replicates by neuron
 # v5: also perform tests for every neuron pair
+# v6: add modulizer
+
 
 # ----------------------------------------------------------------------------
 # -----------------------    Parameters definitions   ------------------------
@@ -23,7 +25,7 @@ bam_dir='/home/aw853/scratch60/2021-11-08_alignments'
 WSversion='WS281'
 references_dir='/gpfs/ycga/project/ysm/hammarlund/aw853/references'
 
-outdir='/gpfs/ycga/project/ysm/hammarlund/aw853/counts/majiq/2021-11-10_outs'
+outdir='/gpfs/ycga/project/ysm/hammarlund/aw853/counts/majiq/2021-11-30_outs'
 
 gff_conversion="gtf2gff3" # or gffread
 
@@ -46,7 +48,13 @@ cfg_file=$outdir/$(date +%F)_majiq.cfg
 mkdir -p $outdir/build
 mkdir -p $outdir/psi
 mkdir -p $outdir/logs
+mkdir -p $outdir/voila_modulizer
 mkdir -p $outdir/deltapsi
+#mkdir -p $outdir/heterogen
+
+
+source /home/aw853/bin/majiq_v2-3/env/bin/activate
+module load Python/3.8.6-GCCcore-10.2.0 HTSlib/1.12-GCCcore-10.2.0
 
 
 
@@ -58,7 +66,7 @@ set -e
 
 echo
 echo
-echo "Starting majiq (config, build, quantif, test v5), $(date)"
+echo "Starting majiq (config, build, quantif, modulize, test v6), $(date)"
 echo
 echo
 
@@ -126,9 +134,6 @@ echo
 echo "Running MAJIQ build on $(date) with $gff_conversion and autocreated conf file"
 echo
 
-source /home/aw853/bin/majiq_v2-3/env/bin/activate
-module load Python/3.8.6-GCCcore-10.2.0 HTSlib/1.12-GCCcore-10.2.0
-
 
 
 
@@ -191,6 +196,31 @@ done
 
 
 
+
+# modulize ----
+
+echo "--------      VOILA modulize      --------"
+echo "Running MAJIQ DeltaPSI on $(date) with conf $cfg_file"
+echo
+
+
+voila modulize \
+  --overwrite \
+  --nproc $SLURM_CPUS_PER_TASK \
+  --logger $outdir/logs \
+  --keep-constitutive --keep-no-lsvs-modules --keep-no-lsvs-junctions \
+  -d $outdir/voila_modulizer
+  $outdir/psi $outdir/build/splicegraph.sql
+
+echo "------------ End modulizer ------------"
+echo
+
+
+
+
+
+
+
 echo "--------      DeltaPSI tests      --------"
 echo "Running MAJIQ DeltaPSI on $(date) with conf $cfg_file"
 echo
@@ -250,14 +280,93 @@ echo "------------ End tests ------------"
 echo
 
 
+
+# No heterogen at this time (will introduce on later versions)
+
+# echo "--------      heterogen tests      --------"
+# echo "Running MAJIQ heterogen on $(date) with conf $cfg_file"
+# echo
+# 
+# # get the neuron names in a non-associative array
+# all_neurs=(${!sampByNeur[@]})
+# 
+# for ((  i = 0; i < ${#all_neurs[@]}; i++ ))
+# do
+#   for (( j = $i+1; j < ${#all_neurs[@]}; j++))
+# 	do
+# 	  echo "##################################################################"
+# 		
+# 		neurA=${all_neurs[$i]}
+# 		neurB=${all_neurs[$j]}
+# 		
+# 		echo "i: $i , j: $j ; Testing $neurA vs $neurB"
+# 		echo
+# 		
+# 		
+#     # usage: majiq heterogen [-h] [-j NPROC] -o OUTDIR [--logger LOGGER] [--silent] [--debug] [--mem-profile] [--min-experiments MIN_EXP] [--minreads MINREADS] [--minpos MINPOS] -grp1 FILES1 [FILES1 ...] -grp2
+#     #                        FILES2 [FILES2 ...] -n NAME_GRP1 NAME_GRP2 [--keep-tmpfiles] [--psi-samples PSI_SAMPLES] [--stats {TTEST,WILCOXON,TNOM,INFOSCORE,ALL} [{TTEST,WILCOXON,TNOM,INFOSCORE,ALL} ...]]
+#     #                        [--test_percentile TEST_PERCENTILE] [--visualization-std VISUALIZATION_STD]
+#     # 
+#     #   --psi-samples PSI_SAMPLES
+#     #                         Number of PSI samples to take per LSV junction. If equal to 0, use expected value only. [Default: 100]
+#     #   --stats {TTEST,WILCOXON,TNOM,INFOSCORE,ALL} [{TTEST,WILCOXON,TNOM,INFOSCORE,ALL} ...]
+#     #                         Test statistics to run. TTEST: unpaired two-sample t-test (Welch's t-test).
+#     #                                                 WILCOXON: Mann-Whitney U two-sample test (nonparametric).
+#     #                                                 TNOM: Total Number of Mistakes (nonparametric).
+#     #                                                 INFOSCORE: TNOM but threshold maximizing mutual information with group labels (nonparametric).
+#     #                                                 ALL: use all other available test statistics. [Default: ['TTEST', 'WILCOXON', 'TNOM']]
+#     #   --test_percentile TEST_PERCENTILE
+#     #                         For each one of the statistical tests, we combine all pvalue per psi sample by percentile calculation. This argument allows the user define with percentile they want to use [Default:
+#     #                         0]
+#     #   --visualization-std VISUALIZATION_STD
+#     #                         Change stochastic estimation error in terms of standard deviation of discretized average posterior per group by sampling additional values of PSI when number of samples is low
+#     #                         [Default: 0.010000]
+#     # 
+#     # Required specification of groups:
+#     #   -grp1 FILES1 [FILES1 ...]
+#     #                         Paths to MAJIQ files for the experiment(s) to quantify for first group (aggregated as replicates if deltapsi, independently if heterogen)
+#     #   -grp2 FILES2 [FILES2 ...]
+#     #                         Paths to MAJIQ files for the experiment(s) to quantify for first group (aggregated as replicates if deltapsi, independently if heterogen)
+#     #   -n NAME_GRP1 NAME_GRP2, --names NAME_GRP1 NAME_GRP2
+#     #                         The names that identify the groups being compared.
+# 
+# 		majiq heterogen \
+# 		  -grp1 ${sampByNeur_path[$neurA]} \
+# 		  -grp2 ${sampByNeur_path[$neurB]} \
+# 		  -n $neurA $neurB \
+# 		  -o $outdir/heterogen \
+# 		  --psi-samples 100 \
+# 		  --nproc $SLURM_CPUS_PER_TASK \
+# 		  --output-type all \
+# 		  --logger $outdir/logs
+# 		
+# 		echo
+# 		
+# 	done
+# done
+# 
+# 
+# 
+# echo "------------ End heterogen ------------"
+# echo
+
+
+
+
+
+
+
+
 # export relevant data ----
 mv $outdir/build/splicegraph.sql $outdir/splicegraph.sql
 mv $outdir/build/majiq.log $outdir/logs/majiq_build.log
 mv $outdir/psi/psi_majiq.log $outdir/logs/majiq_psi.log
 mv $outdir/deltapsi/deltapsi_majiq.log $outdir/logs/majiq_deltapsi.log
+mv $outdir/voila_modulizer/voila.log $outdir/logs/voila_modulizer.log
+
 
 # to download on local computer for Voila and R analyses, then can be deleted from cluster
-tar -czf $outdir/$(date +%y%m%d)_mjq_exprt.tar.gz $outdir/psi/ $outdir/splicegraph.sql $outdir/deltapsi/*.tsv
+tar -czf $outdir/$(date +%y%m%d)_mjq_exprt.tar.gz $outdir/deltapsi/*.tsv $outdir/voila_modulizer/*.tsv
 
 echo
 echo "All done $(date)"
