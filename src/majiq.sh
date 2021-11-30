@@ -209,7 +209,7 @@ voila modulize \
   --nproc $SLURM_CPUS_PER_TASK \
   --logger $outdir/logs \
   --keep-constitutive --keep-no-lsvs-modules --keep-no-lsvs-junctions \
-  -d $outdir/voila_modulizer
+  -d $outdir/voila_modulizer \
   $outdir/psi $outdir/build/splicegraph.sql
 
 echo "------------ End modulizer ------------"
