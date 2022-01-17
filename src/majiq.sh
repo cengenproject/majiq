@@ -12,6 +12,8 @@
 # MAJIQ v4: use the merged bams (no technical replicate), group the biological replicates by neuron
 # v5: also perform tests for every neuron pair
 # v6: add modulizer
+# v7: add heterogen
+
 
 
 # ----------------------------------------------------------------------------
