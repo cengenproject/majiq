@@ -25,7 +25,7 @@ bam_dir='/home/aw853/scratch60/2021-11-08_alignments'
 WSversion='WS281'
 references_dir='/gpfs/ycga/project/ysm/hammarlund/aw853/references'
 
-outdir='/gpfs/ycga/project/ysm/hammarlund/aw853/counts/majiq/2021-11-30_outs'
+outdir='/gpfs/ycga/project/ysm/hammarlund/aw853/counts/majiq/2022-01-17_outs'
 
 gff_conversion="gtf2gff3" # or gffread
 
@@ -84,11 +84,14 @@ echo "--------   List samples to process   --------"
 samplelist=($(ls $bam_dir/*bam | xargs basename -a -s .bam))
 declare -A sampByNeur #for the config file to the BUILD command
 declare -A sampByNeur_path # for the PSI command
+declare -A all_samp # for the HET command
 
 for smp in "${samplelist[@]}"
 do
 	if [[ $smp =~ ^([A-Z1-9ef]{2,4})r[0-9]{1,4}[t12]*$ ]]
 	then
+	  all_samp[$smp]=${BASH_REMATCH[1]}
+	  
 		if [[ -z ${sampByNeur[${BASH_REMATCH[1]}]} ]]
 		then
 			#first time that neuron encountered
@@ -111,6 +114,15 @@ done
 unset sampByNeur[Ref]
 unset sampByNeur_path[Ref]
 
+for smp in "${!all_samp[@]}"
+do
+  if [[ ${all_samp[$smp]} == "Ref" ]]
+  then
+    unset all_samp[$smp]
+  fi
+done
+
+
 
 
 echo "--------     Create config file     --------"
@@ -125,6 +137,14 @@ printf "%s\n" ${sampByNeur[@]} >> $cfg_file
 
 echo "Config file generated and saved as $cfg_file"
 
+
+
+
+echo "##################################################################"
+echo "##################             Build            ##################"
+echo "##################################################################"
+echo
+echo
 
 
 
@@ -168,6 +188,12 @@ echo "Finished the build step."
 echo
 
 
+echo "##################################################################"
+echo "##################             PSI              ##################"
+echo "##################################################################"
+echo
+echo
+
 
 
 
@@ -195,6 +221,11 @@ do
 done
 
 
+echo "##################################################################"
+echo "##################           Modulize           ##################"
+echo "##################################################################"
+echo
+echo
 
 
 # modulize ----
@@ -217,7 +248,11 @@ echo
 
 
 
-
+echo "##################################################################"
+echo "##################           DeltaPSI           ##################"
+echo "##################################################################"
+echo
+echo
 
 
 
@@ -232,7 +267,7 @@ for ((  i = 0; i < ${#all_neurs[@]}; i++ ))
 do
   for (( j = $i+1; j < ${#all_neurs[@]}; j++))
 	do
-	  echo "##################################################################"
+	  echo "---------------"
 		
 		neurA=${all_neurs[$i]}
 		neurB=${all_neurs[$j]}
@@ -276,82 +311,89 @@ done
 
 
 
-echo "------------ End tests ------------"
+echo "------------ End DeltaPSI ------------"
+echo
+
+echo "##################################################################"
+echo "##################           Heterogen          ##################"
+echo "##################################################################"
+echo
 echo
 
 
 
-# No heterogen at this time (will introduce on later versions)
+echo "--------      heterogen tests      --------"
+echo "Running MAJIQ heterogen on $(date) with conf $cfg_file"
+echo
 
-# echo "--------      heterogen tests      --------"
-# echo "Running MAJIQ heterogen on $(date) with conf $cfg_file"
-# echo
-# 
-# # get the neuron names in a non-associative array
-# all_neurs=(${!sampByNeur[@]})
-# 
-# for ((  i = 0; i < ${#all_neurs[@]}; i++ ))
-# do
-#   for (( j = $i+1; j < ${#all_neurs[@]}; j++))
-# 	do
-# 	  echo "##################################################################"
-# 		
-# 		neurA=${all_neurs[$i]}
-# 		neurB=${all_neurs[$j]}
-# 		
-# 		echo "i: $i , j: $j ; Testing $neurA vs $neurB"
-# 		echo
-# 		
-# 		
-#     # usage: majiq heterogen [-h] [-j NPROC] -o OUTDIR [--logger LOGGER] [--silent] [--debug] [--mem-profile] [--min-experiments MIN_EXP] [--minreads MINREADS] [--minpos MINPOS] -grp1 FILES1 [FILES1 ...] -grp2
-#     #                        FILES2 [FILES2 ...] -n NAME_GRP1 NAME_GRP2 [--keep-tmpfiles] [--psi-samples PSI_SAMPLES] [--stats {TTEST,WILCOXON,TNOM,INFOSCORE,ALL} [{TTEST,WILCOXON,TNOM,INFOSCORE,ALL} ...]]
-#     #                        [--test_percentile TEST_PERCENTILE] [--visualization-std VISUALIZATION_STD]
-#     # 
-#     #   --psi-samples PSI_SAMPLES
-#     #                         Number of PSI samples to take per LSV junction. If equal to 0, use expected value only. [Default: 100]
-#     #   --stats {TTEST,WILCOXON,TNOM,INFOSCORE,ALL} [{TTEST,WILCOXON,TNOM,INFOSCORE,ALL} ...]
-#     #                         Test statistics to run. TTEST: unpaired two-sample t-test (Welch's t-test).
-#     #                                                 WILCOXON: Mann-Whitney U two-sample test (nonparametric).
-#     #                                                 TNOM: Total Number of Mistakes (nonparametric).
-#     #                                                 INFOSCORE: TNOM but threshold maximizing mutual information with group labels (nonparametric).
-#     #                                                 ALL: use all other available test statistics. [Default: ['TTEST', 'WILCOXON', 'TNOM']]
-#     #   --test_percentile TEST_PERCENTILE
-#     #                         For each one of the statistical tests, we combine all pvalue per psi sample by percentile calculation. This argument allows the user define with percentile they want to use [Default:
-#     #                         0]
-#     #   --visualization-std VISUALIZATION_STD
-#     #                         Change stochastic estimation error in terms of standard deviation of discretized average posterior per group by sampling additional values of PSI when number of samples is low
-#     #                         [Default: 0.010000]
-#     # 
-#     # Required specification of groups:
-#     #   -grp1 FILES1 [FILES1 ...]
-#     #                         Paths to MAJIQ files for the experiment(s) to quantify for first group (aggregated as replicates if deltapsi, independently if heterogen)
-#     #   -grp2 FILES2 [FILES2 ...]
-#     #                         Paths to MAJIQ files for the experiment(s) to quantify for first group (aggregated as replicates if deltapsi, independently if heterogen)
-#     #   -n NAME_GRP1 NAME_GRP2, --names NAME_GRP1 NAME_GRP2
-#     #                         The names that identify the groups being compared.
-# 
-# 		majiq heterogen \
-# 		  -grp1 ${sampByNeur_path[$neurA]} \
-# 		  -grp2 ${sampByNeur_path[$neurB]} \
-# 		  -n $neurA $neurB \
-# 		  -o $outdir/heterogen \
-# 		  --psi-samples 100 \
-# 		  --nproc $SLURM_CPUS_PER_TASK \
-# 		  --output-type all \
-# 		  --logger $outdir/logs
-# 		
-# 		echo
-# 		
-# 	done
-# done
-# 
-# 
-# 
-# echo "------------ End heterogen ------------"
-# echo
+for ((  i = 0; i < ${#all_samp[@]}; i++ ))
+do
+  for (( j = $i+1; j < ${#all_samp[@]}; j++))
+	do
+	  echo "---------------"
+
+		sampA=${!all_samp[$i]}
+		sampB=${!all_samp[$j]}
+		
+		neurA=${all_neurs[$i]}
+		neurB=${all_neurs[$j]}
+
+		echo "i: $i , j: $j ; Testing $sampA vs $sampB i.e. $neurA vs $neurB "
+		echo
+
+
+    # usage: majiq heterogen [-h] [-j NPROC] -o OUTDIR [--logger LOGGER] [--silent] [--debug] [--mem-profile] [--min-experiments MIN_EXP] [--minreads MINREADS] [--minpos MINPOS] -grp1 FILES1 [FILES1 ...] -grp2
+    #                        FILES2 [FILES2 ...] -n NAME_GRP1 NAME_GRP2 [--keep-tmpfiles] [--psi-samples PSI_SAMPLES] [--stats {TTEST,WILCOXON,TNOM,INFOSCORE,ALL} [{TTEST,WILCOXON,TNOM,INFOSCORE,ALL} ...]]
+    #                        [--test_percentile TEST_PERCENTILE] [--visualization-std VISUALIZATION_STD]
+    #
+    #   --psi-samples PSI_SAMPLES
+    #                         Number of PSI samples to take per LSV junction. If equal to 0, use expected value only. [Default: 100]
+    #   --stats {TTEST,WILCOXON,TNOM,INFOSCORE,ALL} [{TTEST,WILCOXON,TNOM,INFOSCORE,ALL} ...]
+    #                         Test statistics to run. TTEST: unpaired two-sample t-test (Welch's t-test).
+    #                                                 WILCOXON: Mann-Whitney U two-sample test (nonparametric).
+    #                                                 TNOM: Total Number of Mistakes (nonparametric).
+    #                                                 INFOSCORE: TNOM but threshold maximizing mutual information with group labels (nonparametric).
+    #                                                 ALL: use all other available test statistics. [Default: ['TTEST', 'WILCOXON', 'TNOM']]
+    #   --test_percentile TEST_PERCENTILE
+    #                         For each one of the statistical tests, we combine all pvalue per psi sample by percentile calculation. This argument allows the user define with percentile they want to use [Default:
+    #                         0]
+    #   --visualization-std VISUALIZATION_STD
+    #                         Change stochastic estimation error in terms of standard deviation of discretized average posterior per group by sampling additional values of PSI when number of samples is low
+    #                         [Default: 0.010000]
+    #
+    # Required specification of groups:
+    #   -grp1 FILES1 [FILES1 ...]
+    #                         Paths to MAJIQ files for the experiment(s) to quantify for first group (aggregated as replicates if deltapsi, independently if heterogen)
+    #   -grp2 FILES2 [FILES2 ...]
+    #                         Paths to MAJIQ files for the experiment(s) to quantify for first group (aggregated as replicates if deltapsi, independently if heterogen)
+    #   -n NAME_GRP1 NAME_GRP2, --names NAME_GRP1 NAME_GRP2
+    #                         The names that identify the groups being compared.
+
+		majiq heterogen \
+		  -grp1 $outdir/build/$sampA.majiq \
+		  -grp2 $outdir/build/$sampB.majiq \
+		  --names $neurA $neurB \
+		  -o $outdir/heterogen \
+		  --psi-samples 100 \
+		  --nproc $SLURM_CPUS_PER_TASK \
+		  --logger $outdir/logs
+
+		echo
+
+	done
+done
 
 
 
+echo "------------ End heterogen ------------"
+echo
+
+
+
+echo "##################################################################"
+echo "##################################################################"
+echo
+echo
 
 
 
