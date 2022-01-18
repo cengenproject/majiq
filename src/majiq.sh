@@ -328,17 +328,21 @@ echo "--------      heterogen tests      --------"
 echo "Running MAJIQ heterogen on $(date) with conf $cfg_file"
 echo
 
+# get indexed arrays
+all_samp_smp=(${!all_samp[@]})
+all_samp_neu=(${all_samp[@]})
+
 for ((  i = 0; i < ${#all_samp[@]}; i++ ))
 do
   for (( j = $i+1; j < ${#all_samp[@]}; j++))
 	do
 	  echo "---------------"
 
-		sampA=${!all_samp[$i]}
-		sampB=${!all_samp[$j]}
+		sampA=${all_samp_smp[$i]}
+		sampB=${all_samp_smp[$j]}
 		
-		neurA=${all_neurs[$i]}
-		neurB=${all_neurs[$j]}
+		neurA=${all_samp_neu[$i]}
+		neurB=${all_samp_neu[$j]}
 
 		echo "i: $i , j: $j ; Testing $sampA vs $sampB i.e. $neurA vs $neurB "
 		echo
