@@ -14,7 +14,7 @@ neuron_properties <- read_csv("data/neuron_properties.csv")
 
 
 #~ Load ----
-data_dir <- "data/2021-11-10_outs/deltapsi/"
+data_dir <- "data/2021-11-30_outs/deltapsi/"
 
 files_dpsi <- list.files(data_dir,
                          pattern = "\\.tsv$",
@@ -45,6 +45,14 @@ dpsidta <- map_dfr(files_dpsi,
                     add_column(neurA = str_split(.x,"[-\\.]")[[1]][1],
                                neurB = str_split(.x,"[-\\.]")[[1]][2]))
 
+neurs_here <- neuron_properties |>
+  filter(include == "yes") |>
+  pull(Neuron_type)
+
+dpsidta <- dpsidta |>
+  filter(neurA %in% neurs_here,
+         neurB %in% neurs_here)
+
 # separate data in E(PSI) and Std(PSI) fields
 # We get one row per junction
 dpsi <- dpsidta |>
@@ -56,7 +64,7 @@ dpsi <- dpsidta |>
   mutate(across(c(dpsi,p20, p05, psiA, psiB), as.double),
          junction_id = factor(junction_id))
 
-# saveRDS(dpsi, "intermediates/211110_dpsi.rds")
+# saveRDS(dpsi, "intermediates/211130_dpsi.rds")
 
 
 
@@ -64,7 +72,26 @@ dpsi <- dpsidta |>
 
 
 
-dpsi <- readRDS("intermediates/211110_dpsi.rds")
+
+
+dpsi <- readRDS("intermediates/211130_dpsi.rds")
+all_neurs <- unique(c(dpsi$neurA, dpsi$neurB))
+
+
+
+#~ Alec genes expressed ----
+# Use Alec's integrated GeTMMs to determine what genes are expressed in each neuron type
+gene_expr <- read.delim("data/2021-11-30_alec_integration/aggr_ave_integrant_GeTMM_113021.tsv")
+
+neurs_integrated <- colnames(gene_expr)
+
+# chosen to match a FDR of 0.105 (threshold 3 of sc paper) -> 256
+# chosen to match FDR = 14 (same as threshold 2 in sc props) is 73
+threshold <- 73
+gene_expr_bin <- gene_expr > threshold
+
+
+
 
 
 
@@ -84,17 +111,485 @@ signif_genes <- dpsi |>
   group_by(neurA, neurB) |>
   summarize(nb_DS_genes = n())
 
-signif_genes |>
+# signif_genes |>
+#   rename(neurA = neurB,
+#          neurB = neurA) |>
+#   bind_rows(signif_genes) |>
+#   ggplot() +
+#   theme_classic() +
+#   geom_tile(aes(x = neurA, y=neurB, fill = nb_DS_genes))
+
+
+
+# GO wormbase ----
+
+dpsi |>
+  filter(p20 >.50 & p05 < .05) |>
+  pull(gene_id) |>
+  unique() |>
+  clipr::write_clip()
+
+
+
+
+
+
+
+
+# Compare literature ----
+
+bib_by_sf <- readRDS("../../../bulk/psi_methods/data/biblio/bib_by_SF.rds")
+
+
+bib_all <- unique(unlist(unlist(bib_by_sf)))
+length(bib_all)
+i2s(head(bib_all), gids)
+
+
+
+
+# Restrict to genes expressed in at least 2 neurons in our dataset
+expr_sc <- cengenDataSC::cengen_sc_3_bulk > 0
+
+nb_neurs_where_gene_expr <- rowSums(expr_sc[,all_neurs])
+genes_in_our_neur_sample <- names(nb_neurs_where_gene_expr)[nb_neurs_where_gene_expr>2]
+
+table(bib_all %in% genes_in_our_neur_sample)
+bib_all <- intersect(bib_all, genes_in_our_neur_sample)
+
+
+all_signif_genes <- dpsi |>
+  filter(p20 >.50 & p05 < .05) |>
+  pull(gene_id) |>
+  unique()
+
+length(all_signif_genes)
+
+(litt_plot <- plot(eulerr::euler(list(literature = bib_all,
+                                      `this work` = all_signif_genes)),
+                   quantities = TRUE))
+
+# ggsave("compare_literature.pdf", path = export_dir, plot = litt_plot,
+#        width = 4, height = 3, units = "in")
+
+
+
+
+# Heatmap ----
+
+# find overlaps
+overlap <- (t(gene_expr_bin[,neurs_integrated] >0) %*% (gene_expr_bin[,neurs_integrated]>0)) |>
+  as_tibble()
+
+
+gene_expr_tib <- gene_expr_bin |>
+  as.data.frame() |>
+  rownames_to_column("gene_id") |>
+  as_tibble() |>
+  pivot_longer(-gene_id,
+               names_to = "neuron",
+               values_to = "expressed")
+
+coexpr_ds <- dpsi |>
+  mutate(ds = (p20 >.50 & p05 < .05)) |>
+  select(gene_id, ds, neurA, neurB) |>
+  filter(neurA %in% neurs_integrated,
+         neurB %in% neurs_integrated) |>
+  distinct() |>
+  left_join(gene_expr_tib,
+            by = c("gene_id", neurA = "neuron")) |>
+  left_join(gene_expr_tib,
+            by = c("gene_id", neurB = "neuron")) |>
+  mutate(coexpressed = expressed.x & expressed.y) |>
+  filter(! is.na(coexpressed)) |>   # a number of annotated pseudogenes have splicing quantified but not expression
+  select(neurA, neurB, gene_id, ds, coexpressed) |>
+  group_by(neurA, neurB) |>
+  summarize(nb_ds = sum(ds),
+            nb_coexpr = sum(coexpressed),
+            nb_both = sum(ds & coexpressed),
+            nb_total = n(),
+            .groups = "drop")
+
+hm_coexpr <- coexpr_ds |>
+  mutate(prop_ds = 100*nb_both/nb_coexpr) |>
+  select(neurA,neurB,prop_ds)
+
+ds_mat <- hm_coexpr |>
   rename(neurA = neurB,
          neurB = neurA) |>
-  bind_rows(signif_genes) |>
-  ggplot() +
+  bind_rows(hm_coexpr) |>
+  pivot_wider(names_from = neurB,
+              values_from = prop_ds) |>
+  column_to_rownames("neurA") |> 
+  as.matrix()
+ds_mat <- ds_mat[sort(rownames(ds_mat)), sort(colnames(ds_mat))]
+
+hc <- hclust(dist(ds_mat, method = "canberra"), method = "complete")
+
+
+
+# To set the order (roughly)
+weights <- set_names(c("AFD", "ASK", "ASER", "AVM", "AWC","ADL", "AIN", "ASEL", "ASI", "AVG",
+                       "AVH", "AWA","DA", "DD", "IL2", "NSM", "RIA", "RIC", "RIM", "RMD",
+                       "SMD", "VC", "VD", "PVC", "I5", "OLQ", "PHA", "ASG", "BAG", "VB",
+                       "AVK", "PVD", "AIY", "AWB", "AVA", "AVE", "RIS"),
+                     exp(1:37)) |>
+  sort() |>
+  names() |>
+  as.numeric()
+
+
+hm_callback <- function(hc, ...){
+  as.hclust(reorder(as.dendrogram(hc), wts = weights))
+}
+
+hc2 <- hm_callback(hc)
+
+
+pheatmap::pheatmap(ds_mat,
+                   color = colorRampPalette(RColorBrewer::brewer.pal(n = 7, name =
+                                                             "Blues"))(100),
+                   scale = "none",
+                   cluster_rows = hc2,
+                   cluster_cols = hc2,
+                   breaks = (0:100)/5,
+                   cutree_rows = 2,
+                   cutree_cols = 2,
+                   main = "Proportion of coexpressed genes DS",
+                   filename = file.path(export_dir, "heatmap_ds.pdf"),
+                   width = 8,
+                   height = 7
+)
+
+
+table(cutree(hc2, k=2))
+high_ds <- hc2$labels[cutree(hc2, k=2) == 1]
+low_ds <- hc2$labels[cutree(hc2, k=2) == 2]
+
+high_ds_mat <- ds_mat[high_ds, high_ds]
+high_ds_mat[lower.tri(high_ds_mat)] <- NA
+xx <- as.numeric(high_ds_mat)
+xx <- xx[!is.na(xx)]
+range(xx)
+median(xx)
+
+
+low_ds_mat <- ds_mat[low_ds, low_ds]
+low_ds_mat[lower.tri(low_ds_mat)] <- NA
+xx <- as.numeric(low_ds_mat)
+xx <- xx[!is.na(xx)]
+range(xx)
+median(xx)
+
+
+# DE vs DS ----
+
+neurs_integrated_noD <- neurs_integrated |> setdiff(c("VD","DD"))
+
+degs <- read.delim("data/2021-11-30_alec_integration/Total_integrated_DEGS_pairwise_113021.tsv") |>
+  as_tibble() |>
+  rowwise() |>
+  mutate(pair = c_across(starts_with("cell_")) |> sort() |> paste0(collapse = "-"))
+
+dsgs <- signif_genes |>
+  ungroup() |>
+  filter(neurA %in% neurs_integrated_noD,
+         neurB %in% neurs_integrated_noD) |>
+  rowwise() |>
+  mutate(pair = c_across(starts_with("neur")) |> sort() |> paste0(collapse = "-"))
+
+
+de_ds <- full_join(degs, dsgs, by = "pair")
+
+ggplot(de_ds, aes(x = total_integrated_DEGs, y = nb_DS_genes)) +
   theme_classic() +
-  geom_tile(aes(x = neurA, y=neurB, fill = nb_DS_genes))
+  geom_point() +
+  geom_smooth(method = "lm") +
+  # ggrepel::geom_text_repel(aes(label = pair)) +
+  scale_x_log10() + scale_y_log10() +
+  xlab("Number of DE genes (log)") +
+  ylab("Number of DS genes (log)")
+# ggsave("DS_vs_DE.pdf", path = export_dir,
+#        width = 4, height = 4, units = "in")
+
+mod <- lm(log(nb_DS_genes)~log(total_integrated_DEGs), data = de_ds)
+
+plot(fitted.values(mod), residuals(mod))
+summary(mod)
+qqnorm(residuals(mod))
+qqline(residuals(mod))
 
 
 
-#~ Heatmap ----
+
+# Subsample neurons ----
+
+# How many neurons do we need to sequence to detect that many DS genes?
+# Subsamples
+
+
+
+nb_ds_genes_sub <- function(n){
+  neurset <- sample(all_neurs, n)
+  
+  dpsi |>
+    filter(neurA %in% neurset,
+           neurB %in% neurset) |>
+    filter(p20 >.50 & p05 < .05) |>
+    pull(gene_id) |> unique() |>
+    length()
+}
+
+sub_nb_genes_ds <- tibble(nb_neurs = 1:length(all_neurs),
+                          nb_ds_genes = map_int(nb_neurs, nb_ds_genes_sub))
+
+
+
+# Fit Michaelis-Menten model
+mod_micment <- nls(nb_ds_genes ~ Gmax * nb_neurs/(b + nb_neurs),
+                   data = sub_nb_genes_ds,
+                   start = list(Gmax = 3000, b = 10))
+summary(mod_micment)
+plot(fitted.values(mod_micment), residuals(mod_micment))
+qqnorm(residuals(mod_micment))
+qqline(residuals(mod_micment))
+
+
+sub_nb_genes_ds <- cbind(sub_nb_genes_ds, fit=predict(mod_micment))
+
+ggplot(sub_nb_genes_ds) +
+  theme_classic() +
+  geom_line(aes(x=nb_neurs, y=fit), color = "red3", linetype = "dashed") +
+  geom_point(aes(x=nb_neurs, y=nb_ds_genes)) +
+  geom_hline(aes(yintercept = coef(mod_micment)[["Gmax"]]), color = "gray50", linetype = "dotted") +
+  xlab("Number of neurons sampled") +
+  ylab("Number of genes detected as DS")
+# ggsave("nb_genes_ds.pdf", path = export_dir,
+#        width = 5, height = 5/1.375)
+
+
+# 10 replicates per subsample
+
+
+sub_nb_genes_ds_reps <- expand_grid(nb_neurs = 1:length(all_neurs),
+                               rep = 1:10) |>
+  mutate(nb_ds_genes = map_int(nb_neurs, nb_ds_genes_sub))
+
+ggplot(sub_nb_genes_ds_reps) +
+  theme_classic() +
+  geom_boxplot(aes(x = nb_neurs, y = nb_ds_genes, group = nb_neurs))+
+  # geom_point(aes(x=nb_neurs, y=nb_ds_genes)) +
+  xlab("Number of neurons") +
+  ylab("Number of genes detected as DS")
+
+mod_micment <- nls(nb_ds_genes ~ Gmax * nb_neurs/(b + nb_neurs),
+                   data = sub_nb_genes_ds_reps,
+                   start = list(Gmax = 3000, b = 10))
+summary(mod_micment)
+plot(fitted.values(mod_micment), residuals(mod_micment))
+predict(mod_micment, newdata = data.frame(nb_neurs = 118))
+
+sub_nb_genes_ds_reps <- cbind(sub_nb_genes_ds_reps, fit=predict(mod_micment))
+
+ggplot(sub_nb_genes_ds_reps) +
+  theme_classic() +
+  geom_boxplot(aes(x = nb_neurs, y = nb_ds_genes, group = nb_neurs)) +
+  geom_line(aes(x=nb_neurs, y=fit), color = "red3", linetype = "dashed") +
+  # geom_point(aes(x=nb_neurs, y=nb_ds_genes)) +
+  geom_hline(aes(yintercept = coef(mod_micment)[["Gmax"]]), color = "gray50", linetype = "dotted") +
+  xlab("Number of neurons sampled") +
+  ylab("Number of genes detected as DS")
+# ggsave("nb_genes_ds_reps.pdf", path = export_dir,
+#        width = 5.5, height = 3.5)
+
+
+
+#~ Fit on log-linear ----
+ggplot(sub_nb_genes_ds) +
+  theme_classic() +
+  geom_point(aes(x=nb_neurs, y=nb_ds_genes)) +
+  xlab("Number of neurons") +
+  ylab("Number of genes detected as DS") +
+  scale_x_log10()
+
+mod_lm <- lm(nb_ds_genes ~ log(nb_neurs),
+             data = sub_nb_genes_ds)
+summary(mod_lm)
+
+sub_nb_genes_ds<- cbind(sub_nb_genes_ds, fit_lm=predict(mod_lm))
+
+ggplot(sub_nb_genes_ds) +
+  theme_classic() +
+  geom_line(aes(x=nb_neurs, y=fit_lm), color = "red3", linetype = "dashed") +
+  geom_point(aes(x=nb_neurs, y=nb_ds_genes)) +
+  xlab("Number of neurons") +
+  ylab("Number of genes detected as DS") +
+  scale_x_log10()
+
+predict(mod_lm, newdata = data.frame(nb_neurs = 120))
+predict(mod_micment, newdata = data.frame(nb_neurs = 120))
+
+
+
+
+
+
+
+
+#~ By proportion of expressed genes ----
+# Say a gene is expressed if threshold 2 from sc detects it in at least 2 of the sampled classes
+
+prop_ds_genes_sub <- function(n){
+  neurset <- sample(neurs_integrated, n)
+  
+  nb_neurs_where_gene_expr <- rowSums(gene_expr_bin[,neurset])
+  nb_genes_expr_in_neurset <- sum(nb_neurs_where_gene_expr > 1)
+  
+  
+  nb_genes_ds_in_neurset <- dpsi |>
+    filter(neurA %in% neurset,
+           neurB %in% neurset) |>
+    filter(p20 >.50 & p05 < .05) |>
+    pull(gene_id) |> unique() |>
+    length()
+  
+  nb_genes_ds_in_neurset/nb_genes_expr_in_neurset
+}
+
+
+gene_coexpr_by_neur_pair <- dpsi |>
+  mutate(ds = (p20 >.50 & p05 < .05)) |>
+  select(gene_id, ds, neurA, neurB) |>
+  filter(neurA %in% neurs_integrated,
+         neurB %in% neurs_integrated) |>
+  distinct() |>
+  left_join(gene_expr_tib,
+            by = c("gene_id", neurA = "neuron")) |>
+  left_join(gene_expr_tib,
+            by = c("gene_id", neurB = "neuron")) |>
+  mutate(coexpressed = expressed.x & expressed.y) |>
+  filter(! is.na(coexpressed)) |>   # a number of annotated pseudogenes have splicing quantified but not expression
+  select(neurA, neurB, gene_id, ds, coexpressed) 
+
+
+prop_ds_genes_sub <- function(n){
+  neurset <- sample(neurs_integrated, n)
+  
+  gene_coexpr_by_neur_pair |>
+    filter(neurA %in% neurset,
+           neurB %in% neurset,
+           coexpressed) |>
+    group_by(neurA,neurB) |>
+    summarize(prop_ds_in_pair = mean(ds),
+              .groups = "drop") |>
+    summarize(mean_prop_ds = mean(prop_ds_in_pair)) |>
+    pull(mean_prop_ds)
+}
+
+sub_prop_reps <- expand_grid(nb_neurs = 3:length(neurs_integrated),
+                        rep = 1:10) |>
+  mutate(prop_ds_genes = map_dbl(nb_neurs, prop_ds_genes_sub))
+
+
+
+
+ggplot(sub_prop_reps) +
+  theme_classic() +
+  # geom_boxplot(aes(x = nb_neurs, y = prop_ds_genes, group = nb_neurs))+
+  # geom_line(aes(x=nb_neurs, y=fit), color = "red3", linetype = "dashed") +
+  geom_point(aes(x=nb_neurs, y=prop_ds_genes)) +
+  # geom_hline(aes(yintercept = coef(mod_prop_micment)[["Gmax"]]), color = "gray50", linetype = "dotted") +
+  # scale_y_continuous(limits = c(0,.5), labels = \(xx) scales::percent(xx, accuracy = 1)) +
+  xlab("Number of neurons sampled") +
+  ylab("Mean proportion of coexpressed genes detected as DS")
+
+
+
+
+
+
+#~ older version, using sc ----
+
+# expr_sc <- cengenDataSC::cengen_sc_3_bulk > 0
+
+
+prop_ds_genes_sub <- function(n){
+  neurset <- sample(all_neurs, n)
+  
+  nb_neurs_where_gene_expr <- rowSums(gene_expr_bin[,neurset])
+  nb_genes_expr_in_neurset <- sum(nb_neurs_where_gene_expr > 1)
+  
+  
+  nb_genes_ds_in_neurset <- dpsi |>
+    filter(neurA %in% neurset,
+           neurB %in% neurset) |>
+    filter(p20 >.50 & p05 < .05) |>
+    pull(gene_id) |> unique() |>
+    length()
+  
+  nb_genes_ds_in_neurset/nb_genes_expr_in_neurset
+}
+
+
+sub_prop_genes_ds <- tibble(nb_neurs = 3:length(all_neurs),
+                            prop_ds_genes = map_dbl(nb_neurs, prop_ds_genes_sub))
+
+
+# Fit Michaelis-Menten model
+mod_micment <- nls(prop_ds_genes ~ Gmax * nb_neurs/(b + nb_neurs),
+                   data = sub_prop_genes_ds,
+                   start = list(Gmax = 3000, b = 10))
+
+sub_prop_genes_ds <- cbind(sub_prop_genes_ds, fit=predict(mod_micment))
+
+ggplot(sub_prop_genes_ds) +
+  theme_classic() +
+  geom_line(aes(x=nb_neurs, y=fit), color = "red3", linetype = "dashed") +
+  geom_point(aes(x=nb_neurs, y=prop_ds_genes)) +
+  geom_hline(aes(yintercept = coef(mod_micment)[["Gmax"]]), color = "gray50", linetype = "dotted") +
+  scale_y_continuous(limits = c(0,.3), labels = \(xx) scales::percent(xx, accuracy = 1)) +
+  xlab("Number of neurons sampled") +
+  ylab("Proportion of genes detected as DS")
+# ggsave("prop_genes_ds.pdf", path = export_dir,
+#        width = 5, height = 5/1.375)
+
+
+
+
+
+
+
+
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~ ----
+
+
+# Long exons with DS ----
+
+# Consider only genes witrh DS
+genes_ds <- dpsi |>
+  filter(neurA %in% all_neurs,
+         neurB %in% all_neurs) |>
+  filter(p20 >.50 & p05 < .05) |>
+  pull(gene_id) |> unique()
+
+
+# of those, how many have an exon with > 500 bp
+
+exons <- wb_load_exon_coords(281)
+
+big_ex_ds <- exons |>
+  filter(gene_id %in% genes_ds) |>
+  mutate(exon_length = end-start+1) |>
+  filter(exon_length > 1000) |>
+  mutate(gene_name = i2s(gene_id, gids))
+
+
+
+
+#~ old Heatmap normd by overlapping genes ----
+
+
 hm_mat <- signif_genes |>
   rename(neurA = neurB,
          neurB = neurA) |>
@@ -109,6 +604,51 @@ hm_mat <- hm_mat[sort(rownames(hm_mat)), sort(colnames(hm_mat))]
 heatmap_annot <- neuron_properties |>
   column_to_rownames("Neuron_type")
 
+hc <- hclust(dist(hm_mat, method = "canberra"), method = "complete")
+
+overlap <- t(cengenDataSC::cengen_sc_3_bulk[,colnames(hm_mat)] >0) %*% (cengenDataSC::cengen_sc_3_bulk[,colnames(hm_mat)]>0)
+all.equal(colnames(hm_mat), colnames(overlap))
+all.equal(rownames(hm_mat), rownames(overlap))
+
+
+
+# To set the order (roughly)
+weights <- set_names(c("OLL","IL1","VD","DD","PHA","AWC","AVH","DA","PVC","I5","AVM","VC","AIN","OLQ",
+                       "RIM","RMD","ASER","ASI","AFD","BAG","ASEL","ASG","AWA","NSM","CAN","ADL",
+                       "ASK","IL2","RIA","RIC","AVK","SMD","AVA","AVE","AVG","AWB","PVD","PVM","RIS",
+                       "VB","AIY"),
+                     exp(1:41)) |>
+  sort() |>
+  names() |>
+  as.numeric()
+
+
+hm_callback <- function(hc, ...){
+  as.hclust(reorder(as.dendrogram(hc), wts = weights))
+}
+
+hc2 <- hm_callback(hc)
+
+pheatmap::pheatmap((hm_mat/overlap),
+                   scale = "none",
+                   cluster_rows = hc2,
+                   cluster_cols = hc2,
+                   cutree_rows = 2,
+                   cutree_cols = 2,
+                   main = "Normalized by number of overlapping genes",
+                   # filename = file.path(export_dir, "heatmap_ds_byoverlap.pdf"),
+                   # width = 10,
+                   # height = 9
+)
+
+table(cutree(hc2, k=2))
+
+
+
+
+#~ other Heatmaps ----
+
+
 
 pheatmap::pheatmap(hm_mat, scale = "none",
                    clustering_distance_rows = "canberra",
@@ -121,27 +661,9 @@ pheatmap::pheatmap(hm_mat, scale = "none",
                    # height = 9
                    )
 
-#~ Heatmap normd by overlapping genes ----
-
-hc <- hclust(dist(hm_mat, method = "canberra"), method = "complete")
-
-overlap <- t(cengenDataSC::cengen_sc_3_bulk[,colnames(hm_mat)] >0) %*% (cengenDataSC::cengen_sc_3_bulk[,colnames(hm_mat)]>0)
-all.equal(colnames(hm_mat), colnames(overlap))
-all.equal(rownames(hm_mat), rownames(overlap))
 
 
 
-# To set the order (roughly)
-weights <- set_names(c("OLL","OLQ","PHA","AWC","IL1","M4","VD","DD","AVH","DA","PVC","I5","AVM","VC","AIN","RIM","RMD","ASER","ASI","AFD","BAG","ADF","ASEL","ASG","AWA","NSM","CAN","ADL","ASK","IL2","RIA","RIC","AVK","SMD","AVA","AVE","AVG","AWB","PVD","PVM","RIS","VB","AIY"),
-                     exp(1:43)) |>
-  sort() |>
-  names() |>
-  as.numeric()
-
-
-hm_callback <- function(hc, ...){
-  as.hclust(reorder(as.dendrogram(hc), wts = weights))
-}
 
 
 pheatmap::pheatmap((hm_mat/overlap),
@@ -150,13 +672,11 @@ pheatmap::pheatmap((hm_mat/overlap),
                    clustering_distance_cols = "canberra",
                    clustering_method = "complete",
                    clustering_callback = hm_callback,
-                   annotation_row = heatmap_annot,
-                   annotation_col = heatmap_annot,
                    main = "Normalized by number of overlapping genes",
-                   # filename = file.path(export_dir, "heatmap_ds_byoverlap.pdf"),
+                   # filename = file.path(export_dir, "heatmap_ds_byoverlap_no_annot.pdf"),
                    # width = 10,
                    # height = 9
-                   )
+)
 
 
 #~ Heatmap normalized by neurons ----
@@ -540,168 +1060,10 @@ xx |>
 # ~~~~~~~~~~~  ----
 
 
-# Subsample neurons ----
-
-# How many neurons do we need to sequence to detect that many DS genes?
-# Subsamples
-
-all_neurs <- unique(c(dpsi$neurA, dpsi$neurB))
-
-
-nb_ds_genes_sub <- function(n){
-  neurset <- sample(all_neurs, n)
-  
-  dpsi |>
-    filter(neurA %in% neurset,
-           neurB %in% neurset) |>
-    filter(p20 >.50 & p05 < .05) |>
-    pull(gene_id) |> unique() |>
-    length()
-}
-
-sub_nb_genes_ds <- tibble(nb_neurs = 1:length(all_neurs),
-                          nb_ds_genes = map_int(nb_neurs, nb_ds_genes_sub))
-
-ggplot(sub_nb_genes_ds) +
-  theme_classic() +
-  geom_point(aes(x=nb_neurs, y=nb_ds_genes)) +
-  xlab("Number of neurons") +
-  ylab("Number of genes detected as DS")
-
-# Fit Michaelis-Menten model
-mod_micment <- nls(nb_ds_genes ~ Gmax * nb_neurs/(b + nb_neurs),
-    data = sub_nb_genes_ds,
-    start = list(Gmax = 3000, b = 10))
-summary(mod_micment)
-
-sub_nb_genes_ds <- cbind(sub_nb_genes_ds, fit=predict(mod_micment))
-
-ggplot(sub_nb_genes_ds) +
-  theme_classic() +
-  geom_line(aes(x=nb_neurs, y=fit), color = "red3", linetype = "dashed") +
-  geom_point(aes(x=nb_neurs, y=nb_ds_genes)) +
-  geom_hline(aes(yintercept = coef(mod_micment)[["Gmax"]]), color = "gray50", linetype = "dotted") +
-  xlab("Number of neurons sampled") +
-  ylab("Number of genes detected as DS")
-# ggsave("nb_genes_ds.pdf", path = export_dir,
-#        width = 5, height = 5/1.375)
-
-
-#~ Fit on log-linear ----
-ggplot(sub_nb_genes_ds) +
-  theme_classic() +
-  geom_point(aes(x=nb_neurs, y=nb_ds_genes)) +
-  xlab("Number of neurons") +
-  ylab("Number of genes detected as DS") +
-  scale_x_log10()
-
-mod_lm <- lm(nb_ds_genes ~ log(nb_neurs),
-                   data = sub_nb_genes_ds)
-summary(mod_lm)
-
-sub_nb_genes_ds<- cbind(sub_nb_genes_ds, fit_lm=predict(mod_lm))
-
-ggplot(sub_nb_genes_ds) +
-  theme_classic() +
-  geom_line(aes(x=nb_neurs, y=fit_lm), color = "red3", linetype = "dashed") +
-  geom_point(aes(x=nb_neurs, y=nb_ds_genes)) +
-  xlab("Number of neurons") +
-  ylab("Number of genes detected as DS") +
-  scale_x_log10()
-
-predict(mod_lm, newdata = data.frame(nb_neurs = 120))
-predict(mod_micment, newdata = data.frame(nb_neurs = 120))
-
-
-#~ By proportion of expressed genes ----
-# Say a gene is expressed if threshold 2 from sc detects it in at least 2 of the sampled classes
-
-expr_sc <- cengenDataSC::cengen_sc_3_bulk > 0
-
-
-prop_ds_genes_sub <- function(n){
-  neurset <- sample(all_neurs, n)
-  
-  nb_neurs_where_gene_expr <- rowSums(expr_sc[,neurset])
-  nb_genes_expr_in_neurset <- sum(nb_neurs_where_gene_expr > 1)
-  
-  
-  nb_genes_ds_in_neurset <- dpsi |>
-    filter(neurA %in% neurset,
-           neurB %in% neurset) |>
-    filter(p20 >.50 & p05 < .05) |>
-    pull(gene_id) |> unique() |>
-    length()
-  
-  nb_genes_ds_in_neurset/nb_genes_expr_in_neurset
-}
-
-
-sub_prop_genes_ds <- tibble(nb_neurs = 3:length(all_neurs),
-                          prop_ds_genes = map_dbl(nb_neurs, prop_ds_genes_sub))
-
-
-# Fit Michaelis-Menten model
-mod_micment <- nls(prop_ds_genes ~ Gmax * nb_neurs/(b + nb_neurs),
-                   data = sub_prop_genes_ds,
-                   start = list(Gmax = 3000, b = 10))
-
-sub_prop_genes_ds <- cbind(sub_prop_genes_ds, fit=predict(mod_micment))
-
-ggplot(sub_prop_genes_ds) +
-  theme_classic() +
-  geom_line(aes(x=nb_neurs, y=fit), color = "red3", linetype = "dashed") +
-  geom_point(aes(x=nb_neurs, y=prop_ds_genes)) +
-  geom_hline(aes(yintercept = coef(mod_micment)[["Gmax"]]), color = "gray50", linetype = "dotted") +
-  scale_y_continuous(limits = c(0,.3), labels = \(xx) scales::percent(xx, accuracy = 1)) +
-  xlab("Number of neurons sampled") +
-  ylab("Proportion of genes detected as DS")
-# ggsave("prop_genes_ds.pdf", path = export_dir,
-#        width = 5, height = 5/1.375)
 
 
 
 
-# Compare litterature ----
-
-bib_by_sf <- readRDS("../../../bulk/psi_methods/data/biblio/bib_by_SF.rds")
-
-
-bib_all <- unique(unlist(unlist(bib_by_sf)))
-length(bib_all)
-i2s(head(bib_all), gids)
-
-# Restrict to genes expressed in at least 2 neurons in our dataset
-expr_sc <- cengenDataSC::cengen_sc_3_bulk > 0
-
-nb_neurs_where_gene_expr <- rowSums(expr_sc[,all_neurs])
-genes_in_our_neur_sample <- names(nb_neurs_where_gene_expr)[nb_neurs_where_gene_expr>2]
-
-table(bib_all %in% genes_in_our_neur_sample)
-bib_all <- intersect(bib_all, genes_in_our_neur_sample)
-
-
-all_signif_genes <- dpsi |>
-  filter(p20 >.50 & p05 < .05) |>
-  pull(gene_id) |>
-  unique()
-
-length(all_signif_genes)
-
-(litt_plot <- plot(eulerr::euler(list(litterature = bib_all,
-                        `this work` = all_signif_genes)),
-     quantities = TRUE))
-
-# ggsave("compare_litterature2.pdf", path = export_dir, plot = litt_plot,
-#        width = 4, height = 3, units = "in")
-
-
-
-# Classify events ----
-dpsi |>
-  select(gene_id, lsv_id, lsv_type, nb_sj, nb_exons, sj_coords, ir_coords) |>
-  filter(gene_id == s2i("unc-36", gids)) |>
-  distinct() |> View()
 
 
 
