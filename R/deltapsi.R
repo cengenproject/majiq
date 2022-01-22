@@ -81,7 +81,7 @@ all_neurs <- unique(c(dpsi$neurA, dpsi$neurB))
 
 #~ Alec genes expressed ----
 # Use Alec's integrated GeTMMs to determine what genes are expressed in each neuron type
-gene_expr <- read.delim("data/2021-11-30_alec_integration/aggr_ave_integrant_GeTMM_113021.tsv")
+gene_expr <- read.delim("data/genes/aggr_ave_integrant_GeTMM_011822_v2.tsv")
 
 neurs_integrated <- colnames(gene_expr)
 
@@ -93,7 +93,17 @@ gene_expr_bin <- gene_expr > threshold
 
 
 
+ds_genes <- dpsi |>
+       filter(p20 >.50 & p05 < .05) |>
+       pull(gene_id) |> unique()
 
+neur_genes <- readRDS("../../../cengen_10x/ROC/output/211028_genes_categorized_by_pattern.rds")$nonneuronal
+
+table(ds_genes %in% neur_genes)
+
+xx <- ds_genes |> intersect(neur_genes)
+
+head(xx) |> i2s(gids)
 
 
 # Nb of genes with DS ----
@@ -139,13 +149,18 @@ dpsi |>
 # Compare literature ----
 
 bib_by_sf <- readRDS("../../../bulk/psi_methods/data/biblio/bib_by_SF.rds")
-
+bib_ds_genes
 
 bib_all <- unique(unlist(unlist(bib_by_sf)))
 length(bib_all)
 i2s(head(bib_all), gids)
 
+table(bib_ds_genes$gene_id %in% bib_all)
+xx <- bib_ds_genes$gene_id %>% setdiff(bib_all)
+bib_ds_genes[which(! bib_ds_genes$gene_id %in% bib_all),] |> View()
 
+
+bib_all <- read_tsv("data/biblio/bib_ds_genes.tsv")$gene_id
 
 
 # Restrict to genes expressed in at least 2 neurons in our dataset
@@ -169,7 +184,7 @@ length(all_signif_genes)
                                       `this work` = all_signif_genes)),
                    quantities = TRUE))
 
-# ggsave("compare_literature.pdf", path = export_dir, plot = litt_plot,
+# ggsave("compare_literature.png", path = export_dir, plot = litt_plot,
 #        width = 4, height = 3, units = "in")
 
 
@@ -224,28 +239,17 @@ ds_mat <- hm_coexpr |>
   as.matrix()
 ds_mat <- ds_mat[sort(rownames(ds_mat)), sort(colnames(ds_mat))]
 
-hc <- hclust(dist(ds_mat, method = "canberra"), method = "complete")
+hc <- hclust(dist(ds_mat, method = "euclidean"), method = "complete")
 
 
 
-# To set the order (roughly)
-weights <- set_names(c("AFD", "ASK", "ASER", "AVM", "AWC","ADL", "AIN", "ASEL", "ASI", "AVG",
-                       "AVH", "AWA","DA", "DD", "IL2", "NSM", "RIA", "RIC", "RIM", "RMD",
-                       "SMD", "VC", "VD", "PVC", "I5", "OLQ", "PHA", "ASG", "BAG", "VB",
-                       "AVK", "PVD", "AIY", "AWB", "AVA", "AVE", "RIS"),
-                     exp(1:37)) |>
-  sort() |>
-  names() |>
-  as.numeric()
+hc3 <- dendextend::rotate(hc,
+                          c("AFD", "ASK", "ASER", "AVM", "AWC","ADL", "AIN", "ASEL", "ASI", "AVG",
+                            "AVH", "AWA","DA", "IL2", "NSM", "RIA", "RIC", "RIM", "RMD",
+                            "SMD", "VC", "PVC", "I5", "OLQ", "PHA", "ASG", "BAG", "VB",
+                            "AVK", "PVD", "AIY", "AWB", "AVA", "AVE", "RIS"))
 
-
-hm_callback <- function(hc, ...){
-  as.hclust(reorder(as.dendrogram(hc), wts = weights))
-}
-
-hc2 <- hm_callback(hc)
-
-
+hc2 <- dendextend::rotate(hc, rank(rowSums(ds_mat, na.rm = TRUE)))
 pheatmap::pheatmap(ds_mat,
                    color = colorRampPalette(RColorBrewer::brewer.pal(n = 7, name =
                                                              "Blues"))(100),
@@ -256,7 +260,7 @@ pheatmap::pheatmap(ds_mat,
                    cutree_rows = 2,
                    cutree_cols = 2,
                    main = "Proportion of coexpressed genes DS",
-                   filename = file.path(export_dir, "heatmap_ds.pdf"),
+                   # filename = file.path(export_dir, "heatmap_ds.png"),
                    width = 8,
                    height = 7
 )
@@ -284,6 +288,7 @@ median(xx)
 
 # DE vs DS ----
 
+#~ neuron level ----
 neurs_integrated_noD <- neurs_integrated |> setdiff(c("VD","DD"))
 
 degs <- read.delim("data/2021-11-30_alec_integration/Total_integrated_DEGS_pairwise_113021.tsv") |>
@@ -318,6 +323,13 @@ plot(fitted.values(mod), residuals(mod))
 summary(mod)
 qqnorm(residuals(mod))
 qqline(residuals(mod))
+
+
+
+
+
+
+
 
 
 

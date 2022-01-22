@@ -9,6 +9,7 @@ library(wbData)
 # 2014
 # https://www.cell.com/molecular-cell/fulltext/S1097-2765(14)00398-0
 
+# note, this file includes the double mutant
 norris_2014 <- readRDS("../../../bulk/psi_methods/data/biblio/norris_2014_a_pair/targets.rds") |>
   unlist() |> unique() |>
   enframe(value = "gene_id") |>
@@ -111,21 +112,24 @@ barberan_soler_2011 <- bib_barberan_2011 |>
 
 # Wang (2010): grld-1 may regulate grl-1 splicing, see paper https://www.nature.com/articles/nn.2667
 
-others <- tibble(gene_id = c("ced-4","egl-15", "unc-60", "let-2",
+others <- tibble(gene_id = c("ced-4","egl-15", "mec-2", "unc-60", "let-2",
                              "unc-52","lin-10","ret-1","grl-1"),
-                 name = c("Galvin et al., 2011","Kuroyanagu et al., 2006", "Ohno et al., 2012", "Ohno et al., 2008",
+                 name = c("Galvin et al., 2011","Kuroyanagi et al., 2006", "Calixto et al., 2010",
+                          "Ohno et al., 2012", "Ohno et al., 2008",
                           "Kabat et al., 2009;Kotugama et al., 2019","Kabat et al., 2009;Kotugama et al., 2019","Kabat et al., 2009;Kotugama et al., 2019",
                           "Wang et al., 2010")) |>
   mutate(gene_id = s2i(gene_id, gids_280, warn_missing = TRUE))
 
 
-bind_rows(norris_2014, tan_fraser_2017, norris_gracida_calarco_2017, barberan_soler_2011,others) |>
+bib_ds_genes <- bind_rows(norris_2014, tan_fraser_2017, norris_gracida_calarco_2017, barberan_soler_2011,others) |>
   rename(References = name) |>
   group_by(gene_id) |>
   summarize(References = paste(References, collapse=";")) |>
-  mutate(gene_symbol = i2s(gene_id, gids_280, warn_missing = TRUE)) |> View()
+  mutate(gene_symbol = i2s(gene_id, gids_280, warn_missing = TRUE),
+         .after = gene_id)
 
-
+write_tsv(bib_ds_genes,
+            "data/biblio/bib_ds_genes.tsv")
 
 
 

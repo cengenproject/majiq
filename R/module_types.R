@@ -65,6 +65,8 @@ dmod <- modul_summ |>
   slice(match_mod_dpsi) |>
   distinct()
 
+# saveRDS(dmod, "intermediates/220118_dmod.rds")
+
 head(sort(table(dmod$module_event_combination), decreasing = TRUE),10)
 
 event_types <- list(`Alt. 3' ss`      = dmod$module_id[!is.na(dmod$alt3)],
