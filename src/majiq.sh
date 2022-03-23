@@ -48,6 +48,16 @@ ref_gff='intermediates/220322_novel_filt.gff3'
 # ----------------------------------------------------------------------------
 
 
+set -e
+
+echo
+echo
+echo "Starting majiq (config, build, quantif, modulize, test v7), $(date)"
+echo
+
+
+echo "Process gtf"
+
 # Process reference gtf into a gff with gene names
 awk -f src/add_gene_names.awk $gtf_with_novel $gtf_with_novel \
     | sed 's/\tStringTie\t/\tWormBase\t/' \
@@ -81,12 +91,7 @@ module load Python/3.8.6-GCCcore-10.2.0 HTSlib/1.12-GCCcore-10.2.0
 
 # --------    End definitions, start computations    --------
 
-set -e
 
-echo
-echo
-echo "Starting majiq (config, build, quantif, modulize, test v7), $(date)"
-echo
 echo
 
 
