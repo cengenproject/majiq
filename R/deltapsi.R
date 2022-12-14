@@ -8,7 +8,7 @@ library(wbData)
 gids <- wb_load_gene_ids(281)
 
 
-export_dir <- "presentations/2021-11_for_preprint_december/"
+export_dir <- "presentations/2022-12_rerun/"
 
 neuron_properties <- read_csv("data/neuron_properties.csv")
 
@@ -64,7 +64,7 @@ dpsi <- dpsidta |>
   mutate(across(c(dpsi,p20, p05, psiA, psiB), as.double),
          junction_id = factor(junction_id))
 
-# saveRDS(dpsi, "intermediates/211130_dpsi.rds")
+# qs::qsave(dpsi, "intermediates/221214_dpsi.qs")
 
 
 
@@ -74,7 +74,7 @@ dpsi <- dpsidta |>
 
 
 
-dpsi <- readRDS("intermediates/211130_dpsi.rds")
+dpsi <- qs::qread("intermediates/221214_dpsi.qs")
 all_neurs <- unique(c(dpsi$neurA, dpsi$neurB))
 
 
@@ -137,7 +137,7 @@ signif_genes <- dpsi |>
 dpsi |>
   filter(p20 >.50 & p05 < .05) |>
   pull(gene_id) |>
-  unique() |>
+  unique() |>sample(size = 1999) |>
   clipr::write_clip()
 
 
@@ -311,7 +311,7 @@ ggplot(de_ds, aes(x = total_integrated_DEGs, y = nb_DS_genes)) +
   theme_classic() +
   geom_point() +
   geom_smooth(method = "lm") +
-  # ggrepel::geom_text_repel(aes(label = pair)) +
+  ggrepel::geom_text_repel(aes(label = pair)) +
   scale_x_log10() + scale_y_log10() +
   xlab("Number of DE genes (log)") +
   ylab("Number of DAS genes (log)")
