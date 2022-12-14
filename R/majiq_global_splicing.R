@@ -15,25 +15,22 @@ gene_patterns <- readRDS("data/cengen_sc/211028_genes_categorized_by_pattern.rds
 
 
 
-path_psi <- "data/2021-11-09_outs/psi/"
+path_psi <- "data/2022-03-23_outs/psi/"
 files_psi <- list.files(path_psi, pattern = "*.tsv")
 
 # Load file, one row per LSV
 mjqdta <- map_dfr(files_psi,
                   ~read_tsv(file.path(path_psi, .x),
                             col_types = cols(
-                              `Gene ID` = col_character(),
-                              `LSV ID` = col_character(),
-                              `LSV Type` = col_character(),
-                              `E(PSI) per LSV junction` = col_character(),
-                              `StDev(E(PSI)) per LSV junction` = col_character(),
-                              A5SS = col_logical(),
-                              A3SS = col_logical(),
-                              ES = col_logical(),
-                              `Num. Junctions` = col_double(),
-                              `Num. Exons` = col_double(),
-                              `Junctions coords` = col_character(),
-                              `IR coords` = col_character()
+                              gene_id = col_character(),
+                              lsv_id = col_character(),
+                              lsv_type = col_character(),
+                              mean_psi_per_lsv_junction = col_character(),
+                              stdev_psi_per_lsv_junction = col_character(),
+                              num_junctions = col_integer(),
+                              num_exons = col_integer(),
+                              junctions_coords = col_character(),
+                              ir_coords = col_character()
                             ),
                             na = "na") |>
                     add_column(neuron = str_split(.x,"\\.")[[1]][1]))
@@ -41,20 +38,20 @@ mjqdta <- map_dfr(files_psi,
 # separate data in E(PSI) and Std(PSI) fields
 # We get one row per junction
 mjq <- mjqdta |>
-  separate_rows(`E(PSI) per LSV junction`,
-                `StDev(E(PSI)) per LSV junction`,
+  separate_rows(mean_psi_per_lsv_junction,
+                stdev_psi_per_lsv_junction,
                 sep = ";") |>
-  group_by(neuron, `LSV ID`) |>
+  group_by(neuron, lsv_id) |>
   mutate(junction_id = row_number()) |>
   ungroup() |>
   dplyr::select(neuron,
-                gene_id = `Gene ID`,
-                lsv_id = `LSV ID`,
+                gene_id,
+                lsv_id,
                 junction_id,
-                psi = `E(PSI) per LSV junction`,
-                sd = `StDev(E(PSI)) per LSV junction`,
-                jct_coords = `Junctions coords`,
-                ir_coords = `IR coords`) |>
+                psi = mean_psi_per_lsv_junction,
+                sd = stdev_psi_per_lsv_junction,
+                jct_coords = junctions_coords,
+                ir_coords) |>
   mutate(psi = as.double(psi),
          sd = as.double(sd),
          junction_id = factor(junction_id))
@@ -619,7 +616,7 @@ table(all_ds_lsv$nb_DS > 0 & all_ds_lsv2$nb_ds == 0)
 
 
 mjqdta2 <- mjqdta |>
-  filter(`LSV ID` %in% all_ds_lsv$lsv_id[all_ds_lsv$nb_ds > 0])
+  filter(lsv_id %in% all_ds_lsv$lsv_id[all_ds_lsv$nb_ds > 0])
 
 
 # local type
