@@ -87,7 +87,8 @@ neurs_integrated <- colnames(gene_expr)
 
 # chosen to match a FDR of 0.105 (threshold 3 of sc paper) -> 256
 # chosen to match FDR = 14 (same as threshold 2 in sc props) is 73
-threshold <- 73
+# On *integrated* data, using threshold of 20 (to match FDR 14%)
+threshold <- 20
 gene_expr_bin <- gene_expr > threshold
 
 
@@ -148,16 +149,16 @@ dpsi |>
 
 # Compare literature ----
 
-bib_by_sf <- readRDS("../../../bulk/psi_methods/data/biblio/bib_by_SF.rds")
-bib_ds_genes
-
-bib_all <- unique(unlist(unlist(bib_by_sf)))
-length(bib_all)
-i2s(head(bib_all), gids)
-
-table(bib_ds_genes$gene_id %in% bib_all)
-xx <- bib_ds_genes$gene_id %>% setdiff(bib_all)
-bib_ds_genes[which(! bib_ds_genes$gene_id %in% bib_all),] |> View()
+# bib_by_sf <- readRDS("../../../bulk/psi_methods/data/biblio/bib_by_SF.rds")
+# bib_ds_genes
+# 
+# bib_all <- unique(unlist(unlist(bib_by_sf)))
+# length(bib_all)
+# i2s(head(bib_all), gids)
+# 
+# table(bib_ds_genes$gene_id %in% bib_all)
+# xx <- bib_ds_genes$gene_id %>% setdiff(bib_all)
+# bib_ds_genes[which(! bib_ds_genes$gene_id %in% bib_all),] |> View()
 
 
 bib_all <- read_tsv("data/biblio/bib_ds_genes.tsv")$gene_id
@@ -239,7 +240,7 @@ ds_mat <- hm_coexpr |>
   as.matrix()
 ds_mat <- ds_mat[sort(rownames(ds_mat)), sort(colnames(ds_mat))]
 
-hc <- hclust(dist(ds_mat, method = "euclidean"), method = "complete")
+hc <- hclust(dist(ds_mat, method = "canberra"), method = "complete")
 
 
 
@@ -313,7 +314,7 @@ ggplot(de_ds, aes(x = total_integrated_DEGs, y = nb_DS_genes)) +
   # ggrepel::geom_text_repel(aes(label = pair)) +
   scale_x_log10() + scale_y_log10() +
   xlab("Number of DE genes (log)") +
-  ylab("Number of DS genes (log)")
+  ylab("Number of DAS genes (log)")
 # ggsave("DS_vs_DE.pdf", path = export_dir,
 #        width = 4, height = 4, units = "in")
 
@@ -326,9 +327,57 @@ qqline(residuals(mod))
 
 
 
+#~ Only RBPs ----
+
+sf_walhout <- read_csv("data/biblio/list_rbp_walhout.csv",
+                       skip=1,
+                       col_types = cols(
+                         `Gene Name` = col_character(),
+                         `WBID (WS219)` = col_character(),
+                         ORF = col_character(),
+                         RBD = col_character(),
+                         Group = col_double(),
+                         Source = col_character(),
+                         GO = col_character(),
+                         UniProtKB = col_character()))
+
+rbps <- sf_walhout$`WBID (WS219)`[sf_walhout$`WBID (WS219)` %in% rownames(cengenDataSC::cengen_proportion_bulk)]
 
 
+genes_degs <- readRDS("data/genes/integrated_significant_genes_pairwise_bsn9_012722.rds") |>
+  map(as_tibble, rownames = "gene_id") %>%
+  map2_dfr(., names(.), ~add_column(.x, pair = .y))
 
+nb_rbps_deg <- genes_degs |>
+  filter(gene_id %in% rbps) |>
+  group_by(pair) |>
+  summarize(nb_degs = n()) |>
+  mutate(pair = str_remove_all(pair, "[()]"))
+
+stopifnot(sum(nb_rbps_deg$pair %in% dsgs$pair) == sum(dsgs$pair %in% nb_rbps_deg$pair))
+stopifnot(sum(nb_rbps_deg$pair %in% dsgs$pair) == nrow(nb_rbps_deg))
+stopifnot(sum(nb_rbps_deg$pair %in% dsgs$pair) == nrow(dsgs))
+
+de_ds_rbps <- full_join(nb_rbps_deg, dsgs, by = "pair")
+
+
+ggplot(de_ds_rbps, aes(x = nb_degs, y = nb_DS_genes)) +
+  theme_classic() +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  # ggrepel::geom_text_repel(aes(label = pair)) +
+  scale_x_log10() + scale_y_log10() +
+  xlab("Number of DE RBPs (log)") +
+  ylab("Number of DAS genes (log)")
+# ggsave("DS_vs_DE_rbps.pdf", path = export_dir,
+#        width = 4, height = 4, units = "in")
+
+mod <- lm(log(nb_DS_genes)~log(nb_degs), data = de_ds_rbps)
+
+plot(fitted.values(mod), residuals(mod))
+summary(mod)
+qqnorm(residuals(mod))
+qqline(residuals(mod))
 
 
 
@@ -341,6 +390,7 @@ qqline(residuals(mod))
 
 
 
+#~ single replicate ----
 nb_ds_genes_sub <- function(n){
   neurset <- sample(all_neurs, n)
   
@@ -380,67 +430,143 @@ ggplot(sub_nb_genes_ds) +
 #        width = 5, height = 5/1.375)
 
 
-# 10 replicates per subsample
 
 
+
+#~ 10 replicates per subsample ----
+
+#~~ DAS ----
 sub_nb_genes_ds_reps <- expand_grid(nb_neurs = 1:length(all_neurs),
-                               rep = 1:10) |>
+                                    rep = 1:10) |>
   mutate(nb_ds_genes = map_int(nb_neurs, nb_ds_genes_sub))
+
+
+
+#~~ expr ----
+
+nb_expr_genes_sub <- function(n){
+  neurset <- sample(neurs_integrated, n)
+  
+  gene_expr_bin[,neurset] |> matrixStats::rowAnys() |> sum()
+}
+
+sub_nb_genes_expr_reps <- expand_grid(nb_neurs = 2:length(neurs_integrated),
+                                      rep = 1:10) |>
+  mutate(nb_expr_genes = map_int(nb_neurs, nb_expr_genes_sub))
+
 
 ggplot(sub_nb_genes_ds_reps) +
   theme_classic() +
   geom_boxplot(aes(x = nb_neurs, y = nb_ds_genes, group = nb_neurs))+
   # geom_point(aes(x=nb_neurs, y=nb_ds_genes)) +
   xlab("Number of neurons") +
+  ylab("Number of genes detected as DAS")
+
+ggplot(sub_nb_genes_expr_reps) +
+  theme_classic() +
+  geom_boxplot(aes(x = nb_neurs, y = nb_expr_genes, group = nb_neurs))+
+  # geom_point(aes(x=nb_neurs, y=nb_ds_genes)) +
+  xlab("Number of neurons") +
+  ylab("Number of genes detected as DEG")
+
+
+
+
+
+#~ Fit on log-linear ----
+
+#~~ DAS ----
+mod_lm <- lm(nb_ds_genes ~ log(nb_neurs),
+             data = sub_nb_genes_ds_reps)
+plot(fitted.values(mod_lm), residuals(mod_lm))
+summary(mod_lm)
+
+
+
+sub_nb_genes_ds_reps$fit_lm <- predict(mod_lm)
+
+ggplot(sub_nb_genes_ds_reps) +
+  theme_classic() +
+  geom_boxplot(aes(x = nb_neurs, y = nb_ds_genes, group = nb_neurs)) +
+  geom_line(aes(x=nb_neurs, y=fit_lm), color = "red3", linetype = "dashed") +
+  # geom_point(aes(x=nb_neurs, y=nb_ds_genes)) +
+  xlab("Number of neurons sampled") +
+  ylab("Number of genes detected as DAS") +
+  scale_x_continuous(limits = c(0,NA)) +
+  scale_y_continuous(limits = c(0,NA), labels = scales::label_comma())
+# ggsave("nb_genes_das.png", path = export_dir,
+#        width = 5, height = 5/1.375)
+
+predict(mod_lm, newdata = data.frame(nb_neurs = 119))
+
+
+
+#~~ expr ----
+
+gmod_lm <- lm(nb_expr_genes ~ log(nb_neurs),
+              data = sub_nb_genes_expr_reps)
+plot(fitted.values(gmod_lm), residuals(gmod_lm))
+summary(gmod_lm)
+predict(gmod_lm, newdata = data.frame(nb_neurs = 119))
+sub_nb_genes_expr_reps$gmod_lm <- predict(gmod_lm, newdata = data.frame(nb_neurs=sub_nb_genes_expr_reps$nb_neurs))
+
+ggplot(sub_nb_genes_expr_reps) +
+  theme_classic() +
+  geom_boxplot(aes(x = nb_neurs, y = nb_expr_genes, group = nb_neurs)) +
+  geom_line(aes(x=nb_neurs, y=gmod_lm), color = "red3", linetype = "dashed") +
+  # geom_point(aes(x=nb_neurs, y=nb_ds_genes)) +
+  # geom_hline(aes(yintercept = coef(mod_micment)[["Gmax"]]), color = "gray50", linetype = "dotted") +
+  xlab("Number of neurons sampled") +
   ylab("Number of genes detected as DS")
 
-mod_micment <- nls(nb_ds_genes ~ Gmax * nb_neurs/(b + nb_neurs),
+
+
+# Prop
+predict(mod_lm, newdata = data.frame(nb_neurs = 119))/predict(gmod_lm, newdata = data.frame(nb_neurs = 119))
+
+
+
+
+#~ micment ----
+
+#~~ DAS ----
+
+
+dmod_micment <- nls(nb_ds_genes ~ Gmax * nb_neurs/(b + nb_neurs),
                    data = sub_nb_genes_ds_reps,
                    start = list(Gmax = 3000, b = 10))
-summary(mod_micment)
-plot(fitted.values(mod_micment), residuals(mod_micment))
-predict(mod_micment, newdata = data.frame(nb_neurs = 118))
+summary(dmod_micment)
+plot(fitted.values(dmod_micment), residuals(dmod_micment))
+predict(dmod_micment, newdata = data.frame(nb_neurs = 119))
 
-sub_nb_genes_ds_reps <- cbind(sub_nb_genes_ds_reps, fit=predict(mod_micment))
+
+sub_nb_genes_ds_reps <- cbind(sub_nb_genes_ds_reps, fit=predict(dmod_micment))
 
 ggplot(sub_nb_genes_ds_reps) +
   theme_classic() +
   geom_boxplot(aes(x = nb_neurs, y = nb_ds_genes, group = nb_neurs)) +
   geom_line(aes(x=nb_neurs, y=fit), color = "red3", linetype = "dashed") +
   # geom_point(aes(x=nb_neurs, y=nb_ds_genes)) +
-  geom_hline(aes(yintercept = coef(mod_micment)[["Gmax"]]), color = "gray50", linetype = "dotted") +
+  geom_hline(aes(yintercept = coef(dmod_micment)[["Gmax"]]), color = "gray50", linetype = "dotted") +
   xlab("Number of neurons sampled") +
   ylab("Number of genes detected as DS")
 # ggsave("nb_genes_ds_reps.pdf", path = export_dir,
 #        width = 5.5, height = 3.5)
 
 
+#~~ expr ----
 
-#~ Fit on log-linear ----
-ggplot(sub_nb_genes_ds) +
-  theme_classic() +
-  geom_point(aes(x=nb_neurs, y=nb_ds_genes)) +
-  xlab("Number of neurons") +
-  ylab("Number of genes detected as DS") +
-  scale_x_log10()
 
-mod_lm <- lm(nb_ds_genes ~ log(nb_neurs),
-             data = sub_nb_genes_ds)
-summary(mod_lm)
 
-sub_nb_genes_ds<- cbind(sub_nb_genes_ds, fit_lm=predict(mod_lm))
+gmod_micment <- nls(nb_expr_genes ~ Gmax * nb_neurs/(b + nb_neurs),
+                    data = sub_nb_genes_expr_reps,
+                    start = list(Gmax = 8000, b = 10))
+summary(gmod_micment)
+plot(fitted.values(gmod_micment), residuals(gmod_micment))
+predict(gmod_micment, newdata = data.frame(nb_neurs = 119))
 
-ggplot(sub_nb_genes_ds) +
-  theme_classic() +
-  geom_line(aes(x=nb_neurs, y=fit_lm), color = "red3", linetype = "dashed") +
-  geom_point(aes(x=nb_neurs, y=nb_ds_genes)) +
-  xlab("Number of neurons") +
-  ylab("Number of genes detected as DS") +
-  scale_x_log10()
-
-predict(mod_lm, newdata = data.frame(nb_neurs = 120))
-predict(mod_micment, newdata = data.frame(nb_neurs = 120))
-
+# Prop
+predict(dmod_micment, newdata = data.frame(nb_neurs = 119))/predict(gmod_micment, newdata = data.frame(nb_neurs = 119))
 
 
 
