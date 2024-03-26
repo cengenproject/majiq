@@ -54,6 +54,16 @@ gtf_prepared='intermediates/240304_novel_filt_nogene.gtf'
 # ----------------------------------------------------------------------------
 
 
+set -e
+
+echo
+echo
+echo "Starting majiq (config, build, quantif, modulize, test v7), $(date)"
+echo
+
+
+echo "Process gtf"
+
 # Process reference gtf into a gff with gene names
 awk -f src/add_gene_names.awk $ref_gtf $ref_gtf \
     > $gtf_prepared
@@ -86,12 +96,7 @@ module load Python/3.8.6-GCCcore-10.2.0 HTSlib/1.12-GCCcore-10.2.0
 
 # --------    End definitions, start computations    --------
 
-set -e
 
-echo
-echo
-echo "Starting majiq (config, build, quantif, modulize, test v7), $(date)"
-echo
 echo
 
 
