@@ -1,16 +1,16 @@
 library(tidyverse)
 library(wbData)
 
-gids <- wb_load_gene_ids(281)
+gids <- wb_load_gene_ids(289)
 
-export_dir <- "presentations/2021-11_for_preprint_december/"
+export_dir <- "presentations/2024-03_rerun/"
 
 
 # Load deltaPSI
-dpsi <- readRDS("intermediates/211130_dpsi.rds")
+dpsi <- qs::qread("intermediates/240304_dpsi.qs")
 
 # Load modulizer
-modul_summ <- read_tsv("data/2021-11-30_outs/voila_modulizer/summary.tsv",comment = "#",
+modul_summ <- read_tsv("data/2024-03-22_voila_modulizer/summary.tsv",comment = "#",
                col_types = cols(
                  module_id = col_character(),
                  gene_id = col_character(),
@@ -65,7 +65,7 @@ dmod <- modul_summ |>
   slice(match_mod_dpsi) |>
   distinct()
 
-# saveRDS(dmod, "intermediates/220118_dmod.rds")
+# qs::qsave(dmod, "intermediates/240418_dmod.rds")
 
 head(sort(table(dmod$module_event_combination), decreasing = TRUE),10)
 
