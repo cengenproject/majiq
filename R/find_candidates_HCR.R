@@ -93,33 +93,55 @@ neurs_integrated <- colnames(gene_expr_int)
 expression_breadth <- rowMeans(gene_expr_int)
 hist(expression_breadth, breaks = 50)
 
-table(expression_breadth < .05)
+table(expression_breadth < .2)
 
-restricted_pattern <- names(expression_breadth)[expression_breadth < .05]
+restricted_pattern <- names(expression_breadth)[expression_breadth < .2]
 
-
-
+# differentially spliced
 ds_genes <- dpsi |>
-  filter(p20 >.50 & p05 < .05) |>
+  filter(p20 >.50 & p05 < .1 & abs(dpsi) > 0.6 ) |>
   pull(gene_id) |> unique()
+
+
+
+# Keep only DS event if it happens btw neurons where gene is expressed
+dpsi_expr <- dpsi |>
+  filter(p20 >.50 & p05 < .1 & abs(dpsi) > 0.6 ) |>
+  mutate(exprA = map2_lgl(gene_id, neurA, \(.g, .n) gene_expr_int[.g, .n]),
+         exprB = map2_lgl(gene_id, neurB, \(.g, .n) gene_expr_int[.g, .n]))
+
+ds_in_expr <- dpsi_expr |>
+  filter(exprA & exprB) |>
+  pull(gene_id) |> unique()
+
+
+
 
 neur_genes <- wormDatasets::genes_by_pattern
 
 
-table(ds_genes %in% neur_genes$present_in_neurons)
+table(ds_genes %in% neur_genes$nonneuronal)
 
 
 # Selections ----
 
-list(restricted_pattern = restricted_pattern,
-     nonneuronal_expession = neur_genes$nonneuronal,
-     diff_spliced = ds_genes) |>
+list(`Differentially Spliced` = ds_genes,
+     `DS in neurons where expressed` = ds_in_expr) |>
+  eulerr::euler() |>
+  plot(quantities = TRUE)
+
+
+
+
+list(`Restricted pattern` = restricted_pattern,
+     `DS in neurons where expressed` = ds_in_expr,
+     `Non-neuronal expression` = neur_genes$nonneuronal) |>
   eulerr::euler() |>
   plot(quantities = TRUE)
 
 
 # Get list
-candidates <- ds_genes |>
+candidates <- ds_in_expr |>
   setdiff(neur_genes$nonneuronal) |>
   intersect(restricted_pattern)
 
@@ -127,12 +149,38 @@ length(candidates)
 head(candidates)
 head(i2s(candidates, gids))
 writeClipboard(i2s(candidates, gids))
+writeClipboard(candidates)
+
+
 
 # To Excel
 xx <- s2i(clipr::read_clip(), gids)
 writeClipboard(xx)
 
+xx <- clipr::read_clip()
+
+length(xx)
+table(candidates %in% xx)
+table(xx %in% candidates)
+
+clipr::write_clip(xx %in% candidates)
 
 
+# previous list
+candidates2 <- dpsi |>
+  filter(p20 >.50 & p05 < .05 & abs(dpsi) > 0.6 ) |>
+  pull(gene_id) |> unique() |>
+  setdiff(neur_genes$nonneuronal) |>
+  intersect(restricted_pattern)
 
+
+list(new = candidates,
+     old = candidates2) |>
+  eulerr::euler() |>
+  plot(quantities = TRUE)
+
+list(excel = xx,
+     old_candidates = candidates2) |>
+  eulerr::euler() |>
+  plot(quantities = TRUE)
 

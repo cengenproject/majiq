@@ -5,17 +5,17 @@
 library(tidyverse)
 library(wbData)
 
-gids <- wb_load_gene_ids(281)
+gids <- wb_load_gene_ids(289)
 
 
 
 # Load and format data ----
 
-gene_patterns <- readRDS("data/cengen_sc/211028_genes_categorized_by_pattern.rds")
+# gene_patterns <- readRDS("data/cengen_sc/211028_genes_categorized_by_pattern.rds")
+gene_patterns <- wormDatasets::genes_by_pattern
 
 
-
-path_psi <- "data/2022-03-23_outs/psi/"
+path_psi <- "data/2024-03-04_outs/psi/"
 files_psi <- list.files(path_psi, pattern = "*.tsv")
 
 # Load file, one row per LSV
@@ -60,6 +60,8 @@ mjq <- mjqdta |>
 
 
 
+
+
 # Global LSV characterizations ----
 
 nb_jctions_per_lsv <- mjq |>
@@ -85,7 +87,8 @@ nb_jctions_per_lsv |>
   mutate(gene_name = i2s(gene_id, gids)) |>
   select(gene_name,
          `Number of junctions per LSV` = nb_jctions) |>
-  clipr::write_clip()
+  head()
+  # clipr::write_clip()
 
 
 
@@ -107,7 +110,8 @@ nb_lsv_per_gene |>
   filter(max_nb_lsv >= 30) |>
   arrange(desc(max_nb_lsv)) |>
   mutate(gene_name = i2s(gene_id, gids)) |>
-  clipr::write_clip()
+  head()
+  # clipr::write_clip()
 
 
 ## Call differential splicing ----
@@ -232,23 +236,9 @@ all_ds <- mjq |>
             .groups = "drop") |>
   mutate(gene_name = i2s(gene_id, gids))
 
-table(all_ds$has_ds, all_ds1$has_DS)  
-plot(eulerr::euler(list(old = all_ds1$gene_id[all_ds1$has_DS],
-                        new = all_ds$gene_id[all_ds$has_ds])))
 
-plot(all_ds$nb_jnctions,all_ds$nb_DS)
-
-all_ds |>
-  group_by(lsv_id) |>
-  summarize(has_DS = nb_DS > 0) |>
-  pull(has_DS) |>
-  table()
 
 table(all_ds$has_ds)
-
-my_gene <- sample(all_ds1$gene_id[all_ds1$has_DS & !all_ds$has_ds], 1)
-all_ds |>
-  filter(gene_id == my_gene)
 
 
 
@@ -257,7 +247,8 @@ all_ds |>
 # Neuronal enrichment ----
 
 
-table(all_ds$has_ds, all_ds$gene_id %in% gene_patterns$present_in_neurons)
+table(has_ds = all_ds$has_ds,
+      is_neuronal = all_ds$gene_id %in% gene_patterns$present_in_neurons)
 
 table(gene_patterns$nondetected %in% all_ds$gene_id)
 table(gene_patterns$nonneuronal %in% all_ds$gene_id)
@@ -393,15 +384,16 @@ fig_gene_patterns$in_sequenced_neurons <- names(prop_neurs_with_expr)[prop_neurs
 
 setdiff(c(gene_patterns$broadly_neuronal, gene_patterns$panneuronal),
         all_ds$gene_id) |> 
-  clipr::write_clip()
+  # clipr::write_clip()
+  i2s(gids)
 
 
 # Genes that are non-neuronal (sc) and unquantified (majiq)
 
 setdiff(gene_patterns$nonneuronal,
         all_ds$gene_id) |> #length()
-  sample(20) |> 
-  clipr::write_clip()
+  sample(20) |> i2s(gids)
+  # clipr::write_clip()
 #> mostly just noise; a few are high (possibly bc conta or miscategorized in sc), but no DS
 
 
